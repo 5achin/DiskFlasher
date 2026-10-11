@@ -10,10 +10,24 @@ final class FlashModel: ObservableObject {
         case failed(String)
     }
 
-    @Published var isoURL: URL?
-    @Published var disks: [Disk] = []
+    @Published var isoURL: URL? {
+        didSet {
+            if isoURL != oldValue { RunLog.write("Image selected: \(isoURL?.path ?? "none")") }
+        }
+    }
+    @Published var disks: [Disk] = [] {
+        didSet {
+            if disks != oldValue {
+                RunLog.write("External drives: " + (disks.isEmpty ? "none" : disks.map(\.label).joined(separator: "; ")))
+            }
+        }
+    }
     @Published var selectedDiskID: Disk.ID?
-    @Published var status: Status = .idle
+    @Published var status: Status = .idle {
+        didSet {
+            if status != oldValue { RunLog.write("Status: \(status)") }
+        }
+    }
     @Published var bytesWritten: Int64 = 0
     @Published var isoSize: Int64 = 0
     @Published var options = FlashOptions()
@@ -51,6 +65,8 @@ final class FlashModel: ObservableObject {
             status = .failed("The ISO file could not be read.")
             return
         }
+        RunLog.write("Flash requested: image \(isoURL.path) (\(size) bytes) to \(disk.label), options \(options)")
+
         // Read a byte now so any macOS prompt for access to the folder appears before the password prompt.
         guard let probe = try? FileHandle(forReadingFrom: isoURL),
               let firstByte = try? probe.read(upToCount: 1), !firstByte.isEmpty else {
@@ -86,6 +102,7 @@ final class FlashModel: ObservableObject {
 
         // Same steps as flash_iso.sh: unmount, dd to the raw device, eject.
         let unmount = await Shell.run("/usr/sbin/diskutil", ["unmountDisk", disk.devicePath])
+        RunLog.write("diskutil unmountDisk \(disk.devicePath): exit \(unmount.status) \(String(decoding: unmount.output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) \(unmount.errorOutput)")
         guard unmount.status == 0 else {
             status = .failed(unmount.errorOutput.isEmpty ? "\(disk.name) could not be unmounted." : unmount.errorOutput)
             return
@@ -94,11 +111,15 @@ final class FlashModel: ObservableObject {
         let devicePath = options.outputPath(for: disk)
         let device: Int32
         do {
+            RunLog.write("authopen \(devicePath) with flags \(options.openFlags)")
             device = try await Task.detached { try DeviceAuthorizer.open(devicePath, flags: options.openFlags) }.value
+            RunLog.write("authopen succeeded")
         } catch DeviceAuthorizer.Failure.cancelled {
+            RunLog.write("authopen: cancelled at the administrator prompt")
             status = .idle
             return
         } catch DeviceAuthorizer.Failure.failed(let message) {
+            RunLog.write("authopen failed: \(message)")
             status = .failed(Self.explain(message, devicePath: devicePath))
             return
         } catch {
@@ -119,6 +140,7 @@ final class FlashModel: ObservableObject {
         process.standardOutput = FileHandle(fileDescriptor: device, closeOnDealloc: true)
         let errors = Pipe()
         process.standardError = errors
+        RunLog.write("Running /bin/dd \(process.arguments?.joined(separator: " ") ?? "") with standard output on \(devicePath)")
 
         let log = ProgressLog()
         errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -141,6 +163,7 @@ final class FlashModel: ObservableObject {
         ddProcess = nil
         errors.fileHandleForReading.readabilityHandler = nil
         _ = log.append(errors.fileHandleForReading.availableData)
+        RunLog.write("dd \(exitStatus.map { "exited with status \($0)" } ?? "could not be started")\(isCancelling ? " after Cancel" : ""), \(bytesWritten) of \(total) bytes reported\n\(log.summary)")
 
         if isCancelling {
             status = .cancelled("Flashing was cancelled. \(disk.name) is partially written and unusable until you flash it again or erase it in Disk Utility.")
@@ -148,6 +171,7 @@ final class FlashModel: ObservableObject {
             bytesWritten = total
             if options.ejectWhenDone {
                 let eject = await Shell.run("/usr/sbin/diskutil", ["eject", disk.devicePath])
+                RunLog.write("diskutil eject \(disk.devicePath): exit \(eject.status) \(eject.errorOutput)")
                 status = .succeeded(eject.status == 0
                     ? "Your bootable USB is ready. \(disk.name) has been ejected."
                     : "Your bootable USB is ready, but \(disk.name) could not be ejected. Eject it before unplugging it.")
@@ -163,6 +187,7 @@ final class FlashModel: ObservableObject {
     /// Stops a running flash. The drive is left partially written.
     func cancel() {
         guard isFlashing else { return }
+        RunLog.write("Cancel requested")
         isCancelling = true
         ddProcess?.terminate()
     }
@@ -184,6 +209,14 @@ private final class ProgressLog: @unchecked Sendable {
         let chunk = String(decoding: data, as: UTF8.self)
         lock.withLock { text = String((text + chunk).suffix(4096)) }
         return chunk.matches(of: /([0-9]+) bytes/).last.flatMap { Int64($0.1) }
+    }
+
+    /// What dd printed, without the once-a-second progress lines.
+    var summary: String {
+        lock.withLock { text }
+            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+            .filter { !$0.contains(") transferred") }
+            .joined(separator: "\n")
     }
 
     var lastError: String? {
