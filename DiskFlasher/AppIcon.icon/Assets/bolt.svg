@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC531"/>
+      <stop offset="1" stop-color="#FF8A00"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(512 512) scale(1.2427) translate(-512 -512)">
+    <path d="M539 447 L409.4 598.2 L501.2 598.2 L474.2 717 L614.6 560.4 L522.8 560.4 Z" fill="url(#spark)" stroke="url(#spark)" stroke-width="18" stroke-linejoin="round"/>
+  </g>
+</svg>

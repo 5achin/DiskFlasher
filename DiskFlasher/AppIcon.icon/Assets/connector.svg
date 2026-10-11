@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4F6F9"/>
+      <stop offset="1" stop-color="#C3C9D3"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(512 512) scale(1.2427) translate(-512 -512)">
+    <rect x="397" y="232" width="230" height="190" rx="24" fill="url(#metal)"/>
+    <rect x="439" y="282" width="46" height="46" rx="8" fill="#4A5568"/>
+    <rect x="539" y="282" width="46" height="46" rx="8" fill="#4A5568"/>
+  </g>
+</svg>
