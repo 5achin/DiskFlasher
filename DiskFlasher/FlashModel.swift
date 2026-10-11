@@ -16,6 +16,14 @@ final class FlashModel: ObservableObject {
     @Published var status: Status = .idle
     @Published var bytesWritten: Int64 = 0
     @Published var isoSize: Int64 = 0
+    @Published var options = FlashOptions()
+
+    /// The dd command as it will be run, for display.
+    var commandPreview: String {
+        let input = isoURL?.path ?? "image.iso"
+        let output = selectedDisk.map(options.outputPath) ?? (options.useRawDevice ? "/dev/rdiskN" : "/dev/diskN")
+        return (["sudo", "dd"] + options.operands(input: input, output: output)).joined(separator: " ")
+    }
 
     /// Set while a flash is running; creating this file tells the privileged script to stop dd.
     private var cancelFileURL: URL?
@@ -50,8 +58,14 @@ final class FlashModel: ObservableObject {
             status = .failed("The ISO file could not be read.")
             return
         }
-        guard size <= disk.size else {
-            status = .failed("The ISO is larger than \(disk.name).")
+        let options = options
+        let total = options.bytesToCopy(inputSize: size)
+        guard total > 0 else {
+            status = .failed("With these options there is nothing to copy. Check Skip and Count.")
+            return
+        }
+        guard options.endOffset(inputSize: size) <= disk.size else {
+            status = .failed("The data would not fit on \(disk.name).")
             return
         }
         // Disk numbers can be reassigned when drives are replugged, so check
@@ -77,7 +91,7 @@ final class FlashModel: ObservableObject {
             isCancelling = false
         }
 
-        isoSize = size
+        isoSize = total
         bytesWritten = 0
         status = .flashing
 
@@ -93,21 +107,29 @@ final class FlashModel: ObservableObject {
         // Same steps as flash_iso.sh: unmount, dd to the raw device, eject.
         // dd runs in the background so the script can stop it when the cancel file appears.
         let cancelPath = Shell.quote(cancelURL.path)
-        let command = [
+        let dd = options.operands(input: isoURL.path, output: options.outputPath(for: disk))
+            .map(Shell.quote)
+            .joined(separator: " ")
+        var steps = [
             "/usr/sbin/diskutil unmountDisk \(disk.devicePath) || exit 1",
-            "/bin/dd if=\(Shell.quote(isoURL.path)) of=\(disk.rawDevicePath) bs=4m status=progress 2>\(Shell.quote(logURL.path)) & pid=$!",
+            "/bin/dd \(dd) 2>\(Shell.quote(logURL.path)) & pid=$!",
             "while kill -0 $pid 2>/dev/null; do if [ -e \(cancelPath) ]; then kill $pid; wait $pid; exit 99; fi; sleep 0.5; done",
             "wait $pid || exit 1",
-            "/usr/sbin/diskutil eject \(disk.devicePath)",
-        ].joined(separator: "; ")
+        ]
+        if options.ejectWhenDone {
+            steps.append("/usr/sbin/diskutil eject \(disk.devicePath)")
+        }
+        let command = steps.joined(separator: "; ")
         let result = await Shell.run("/usr/bin/osascript", ["-e", Self.appleScript(runningAsAdmin: command)])
         monitor.cancel()
 
         if isCancelling && result.status != 0 {
             status = .cancelled("Flashing was cancelled. \(disk.name) is partially written and unusable until you flash it again or erase it in Disk Utility.")
         } else if result.status == 0 {
-            bytesWritten = size
-            status = .succeeded("Your bootable USB is ready. \(disk.name) has been ejected.")
+            bytesWritten = total
+            status = .succeeded(options.ejectWhenDone
+                ? "Your bootable USB is ready. \(disk.name) has been ejected."
+                : "Your bootable USB is ready. Eject \(disk.name) before unplugging it.")
         } else if result.errorOutput.contains("-128") {
             status = .idle
         } else {

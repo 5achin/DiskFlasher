@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var isConfirming = false
     @State private var isConfirmingCancel = false
     @State private var isDropTargeted = false
+    @AppStorage("showAdvancedOptions") private var isShowingOptions = false
 
     var body: some View {
         Form {
@@ -54,6 +55,13 @@ struct ContentView: View {
             .disabled(model.isFlashing)
 
             statusSection
+
+            Section {
+                DisclosureGroup("Advanced Options", isExpanded: $isShowingOptions) {
+                    OptionsView(options: $model.options, commandPreview: model.commandPreview)
+                }
+            }
+            .disabled(model.isFlashing)
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
