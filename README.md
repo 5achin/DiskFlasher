@@ -3,7 +3,7 @@
 A small, native macOS app for writing ISO and IMG disk images to USB drives. It is a friendly window on top of the `dd` command that ships with every Mac, so there is nothing else to install.
 
 <p align="center">
-  <img src="docs/main-window.png" alt="The Disk Flasher window, with a Disk Image row, a USB Drive menu and a Flash button in the toolbar" width="500">
+  <img src="docs/main-window.png" alt="The Disk Flasher window, with a Disk Image row, a USB Drive menu and a Flash button in the toolbar" width="612">
 </p>
 
 ## What it does
@@ -60,7 +60,7 @@ To stop partway through, click **Cancel** in the toolbar. A drive that was cance
 Click **Advanced Options** to expand the panel. The defaults suit almost every image, so you can leave these alone unless you know you need one. Each row shows the `dd` operand it controls.
 
 <p align="center">
-  <img src="docs/advanced-options.png" alt="The Advanced Options panel expanded, listing the dd options" width="500">
+  <img src="docs/advanced-options.png" alt="The Advanced Options panel expanded, listing the dd options" width="612">
 </p>
 
 | Option | `dd` operand | Default | What it does |
