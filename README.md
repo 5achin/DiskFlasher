@@ -1,4 +1,8 @@
-# Disk Flasher
+<p align="center">
+  <img src="docs/app-icon.png" alt="The Disk Flasher app icon" width="128">
+</p>
+
+<h1 align="center">Disk Flasher</h1>
 
 A small, native macOS app for writing ISO and IMG disk images to USB drives. It is a friendly window on top of the `dd` command that ships with every Mac, so there is nothing else to install.
 
