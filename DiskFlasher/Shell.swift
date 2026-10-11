@@ -35,9 +35,4 @@ enum Shell {
             }
         }
     }
-
-    /// Quotes a string for use as a single word in /bin/sh.
-    static func quote(_ string: String) -> String {
-        "'" + string.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
 }

@@ -18,8 +18,8 @@ final class FlashModel: ObservableObject {
     @Published var isoSize: Int64 = 0
     @Published var options = FlashOptions()
 
-    /// Set while a flash is running; creating this file tells the privileged script to stop dd.
-    private var cancelFileURL: URL?
+    /// The running dd, kept so Cancel can stop it.
+    private var ddProcess: Process?
     @Published private(set) var isCancelling = false
 
     var selectedDisk: Disk? {
@@ -59,11 +59,6 @@ final class FlashModel: ObservableObject {
         }
         try? probe.close()
 
-        guard let streamer = ImageStreamer() else {
-            status = .failed("Flashing could not be set up.")
-            return
-        }
-
         let options = options
         let total = options.bytesToCopy(inputSize: size)
         guard total > 0 else {
@@ -83,103 +78,117 @@ final class FlashModel: ObservableObject {
             return
         }
 
-        let logURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("DiskFlasher-\(UUID().uuidString).log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        defer { try? FileManager.default.removeItem(at: logURL) }
-
-        let cancelURL = logURL.deletingPathExtension().appendingPathExtension("cancel")
-        cancelFileURL = cancelURL
-        isCancelling = false
-        defer {
-            try? FileManager.default.removeItem(at: cancelURL)
-            cancelFileURL = nil
-            isCancelling = false
-        }
-
         isoSize = total
         bytesWritten = 0
+        isCancelling = false
         status = .flashing
+        defer { isCancelling = false }
 
-        let monitor = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                if let written = Self.bytesTransferred(inLogAt: logURL) {
-                    self?.bytesWritten = written
-                }
+        // Same steps as flash_iso.sh: unmount, dd to the raw device, eject.
+        let unmount = await Shell.run("/usr/sbin/diskutil", ["unmountDisk", disk.devicePath])
+        guard unmount.status == 0 else {
+            status = .failed(unmount.errorOutput.isEmpty ? "\(disk.name) could not be unmounted." : unmount.errorOutput)
+            return
+        }
+
+        let devicePath = options.outputPath(for: disk)
+        let device: Int32
+        do {
+            device = try await Task.detached { try DeviceAuthorizer.open(devicePath) }.value
+        } catch DeviceAuthorizer.Failure.cancelled {
+            status = .idle
+            return
+        } catch DeviceAuthorizer.Failure.failed(let message) {
+            status = .failed(Self.explain(message, devicePath: devicePath))
+            return
+        } catch {
+            status = .failed(error.localizedDescription)
+            return
+        }
+        guard !isCancelling else {
+            close(device)
+            status = .idle
+            return
+        }
+
+        // dd's standard output is the opened drive, and /dev/fd/1 makes dd treat it as its output file.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/dd")
+        process.arguments = options.operands(input: isoURL.path, output: "/dev/fd/1")
+        process.standardOutput = FileHandle(fileDescriptor: device, closeOnDealloc: true)
+        let errors = Pipe()
+        process.standardError = errors
+
+        let log = ProgressLog()
+        errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let written = log.append(handle.availableData)
+            Task { @MainActor in
+                if let written { self?.bytesWritten = written }
             }
         }
 
-        // Same steps as flash_iso.sh: unmount, dd to the raw device, eject.
-        // dd runs in the background so the script can stop it when the cancel file appears.
-        let cancelPath = Shell.quote(cancelURL.path)
-        let streaming = Task.detached(priority: .userInitiated) {
-            streamer.stream(
-                imageAt: isoURL,
-                paddingTo: options.padBlocks ? options.blockSize.bytes : nil,
-                skippingReadErrors: options.continueOnReadErrors
-            )
+        let exitStatus: Int32? = await withCheckedContinuation { continuation in
+            process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
+            do {
+                try process.run()
+                ddProcess = process
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(returning: nil)
+            }
         }
+        ddProcess = nil
+        errors.fileHandleForReading.readabilityHandler = nil
+        _ = log.append(errors.fileHandleForReading.availableData)
 
-        let dd = options.operands(input: streamer.pipeURL.path, output: options.outputPath(for: disk))
-            .map(Shell.quote)
-            .joined(separator: " ")
-        var steps = [
-            "/usr/sbin/diskutil unmountDisk \(disk.devicePath) || exit 1",
-            "/bin/dd \(dd) 2>\(Shell.quote(logURL.path)) & pid=$!",
-            "while kill -0 $pid 2>/dev/null; do if [ -e \(cancelPath) ]; then kill $pid; wait $pid; exit 99; fi; sleep 0.5; done",
-            "wait $pid || exit 1",
-        ]
-        if options.ejectWhenDone {
-            steps.append("/usr/sbin/diskutil eject \(disk.devicePath)")
-        }
-        let command = steps.joined(separator: "; ")
-        let result = await Shell.run("/usr/bin/osascript", ["-e", Self.appleScript(runningAsAdmin: command)])
-        monitor.cancel()
-        streamer.stop()
-        let streamError = await streaming.value
-
-        if isCancelling && result.status != 0 {
+        if isCancelling {
             status = .cancelled("Flashing was cancelled. \(disk.name) is partially written and unusable until you flash it again or erase it in Disk Utility.")
-        } else if let streamError {
-            status = .failed(streamError)
-        } else if result.status == 0 {
+        } else if exitStatus == 0 {
             bytesWritten = total
-            status = .succeeded(options.ejectWhenDone
-                ? "Your bootable USB is ready. \(disk.name) has been ejected."
-                : "Your bootable USB is ready. Eject \(disk.name) before unplugging it.")
-        } else if result.errorOutput.contains("-128") {
-            status = .idle
+            if options.ejectWhenDone {
+                let eject = await Shell.run("/usr/sbin/diskutil", ["eject", disk.devicePath])
+                status = .succeeded(eject.status == 0
+                    ? "Your bootable USB is ready. \(disk.name) has been ejected."
+                    : "Your bootable USB is ready, but \(disk.name) could not be ejected. Eject it before unplugging it.")
+            } else {
+                status = .succeeded("Your bootable USB is ready. Eject \(disk.name) before unplugging it.")
+            }
         } else {
-            let ddError = (try? String(contentsOf: logURL, encoding: .utf8))?
-                .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
-                .last { $0.hasPrefix("dd:") }
-                .map(String.init)
-            status = .failed(ddError ?? (result.errorOutput.isEmpty ? "Flashing failed." : result.errorOutput))
+            status = .failed(log.lastError.map { Self.explain($0, devicePath: devicePath) } ?? "Flashing failed.")
         }
         await refreshDisks()
     }
 
     /// Stops a running flash. The drive is left partially written.
     func cancel() {
-        guard isFlashing, let cancelFileURL else { return }
+        guard isFlashing else { return }
         isCancelling = true
-        FileManager.default.createFile(atPath: cancelFileURL.path, contents: nil)
+        ddProcess?.terminate()
     }
 
-    /// Wraps a shell command in AppleScript that asks macOS for an administrator password.
-    private static func appleScript(runningAsAdmin command: String) -> String {
-        let escaped = command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "do shell script \"\(escaped)\" with administrator privileges"
+    /// Adds what to do about it when macOS privacy protection is what refused access.
+    private static func explain(_ message: String, devicePath: String) -> String {
+        guard message.contains("Operation not permitted") else { return message }
+        return "\(message). macOS blocked access to the drive. Allow Disk Flasher under Privacy & Security > Files & Folders > Removable Volumes in System Settings, then try again."
+    }
+}
+
+/// Collects dd's standard error: `status=progress` lines and any error message.
+private final class ProgressLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = ""
+
+    /// Adds output and returns the latest byte count it contains, if any.
+    func append(_ data: Data) -> Int64? {
+        let chunk = String(decoding: data, as: UTF8.self)
+        lock.withLock { text = String((text + chunk).suffix(4096)) }
+        return chunk.matches(of: /([0-9]+) bytes/).last.flatMap { Int64($0.1) }
     }
 
-    /// Reads the latest byte count from dd's `status=progress` output.
-    nonisolated private static func bytesTransferred(inLogAt url: URL) -> Int64? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        let text = String(decoding: data.suffix(512), as: UTF8.self)
-        guard let match = text.matches(of: /([0-9]+) bytes/).last else { return nil }
-        return Int64(match.1)
+    var lastError: String? {
+        lock.withLock { text }
+            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+            .last { $0.hasPrefix("dd:") }
+            .map(String.init)
     }
 }

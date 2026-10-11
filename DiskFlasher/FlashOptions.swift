@@ -52,13 +52,9 @@ struct FlashOptions: Equatable {
         useRawDevice ? disk.rawDevicePath : disk.devicePath
     }
 
-    /// The dd operands, unquoted, in the order they are passed.
-    ///
-    /// `input` is the pipe an `ImageStreamer` writes to, so `fullblock` is needed to gather
-    /// whole blocks from it. Padding and read-error handling happen in the streamer, because
-    /// dd can't combine `conv=sync` with `fullblock` and never sees the image file itself.
+    /// The dd operands in the order they are passed.
     func operands(input: String, output: String) -> [String] {
-        var operands = ["if=\(input)", "iflag=fullblock", "of=\(output)", "bs=\(blockSize.rawValue)"]
+        var operands = ["if=\(input)", "of=\(output)", "bs=\(blockSize.rawValue)"]
         if let count = positive(count) { operands.append("count=\(count)") }
         if let skip = positive(skip) { operands.append("skip=\(skip)") }
         if let seek = positive(seek) { operands.append("seek=\(seek)") }
@@ -70,6 +66,8 @@ struct FlashOptions: Equatable {
         if !oflag.isEmpty { operands.append("oflag=\(oflag.joined(separator: ","))") }
 
         var conv: [String] = []
+        if padBlocks { conv.append("sync") }
+        if continueOnReadErrors { conv.append("noerror") }
         if flushBeforeFinishing { conv.append("fsync") }
         if !conv.isEmpty { operands.append("conv=\(conv.joined(separator: ","))") }
 
