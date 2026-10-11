@@ -25,7 +25,7 @@ struct ContentView: View {
                             Text("Choose an ISO file, or drag one here.")
                         }
                     } icon: {
-                        Image(systemName: "opticaldisc")
+                        Image(systemName: "opticaldisc").frame(width: 24)
                     }
                 }
 
@@ -41,7 +41,7 @@ struct ContentView: View {
                         Text("USB Drive")
                         Text(diskDetail)
                     } icon: {
-                        Image(systemName: "mediastick")
+                        Image(systemName: "mediastick").frame(width: 24)
                     }
                 }
                 .disabled(model.disks.isEmpty)
