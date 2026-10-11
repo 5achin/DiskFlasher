@@ -3,7 +3,6 @@ import SwiftUI
 /// The rows inside the Advanced Options disclosure: the dd operands a flash commonly needs.
 struct OptionsView: View {
     @Binding var options: FlashOptions
-    let commandPreview: String
 
     var body: some View {
         Picker(selection: $options.blockSize) {
@@ -61,15 +60,6 @@ struct OptionsView: View {
 
         Toggle(isOn: $options.ejectWhenDone) {
             row("Eject When Done", nil, "Eject the drive after a successful flash.", symbol: "eject")
-        }
-
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Command")
-            Text(commandPreview)
-                .font(.system(.callout, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
 
         LabeledContent {

@@ -12,6 +12,21 @@ struct ContentView: View {
     var body: some View {
         Form {
             Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Command", systemImage: "terminal")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(model.commandPreview)
+                        .font(.system(.title3, design: .monospaced).weight(.medium))
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section {
                 LabeledContent {
                     Button("Choose…") { isPickingISO = true }
                 } label: {
@@ -58,7 +73,7 @@ struct ContentView: View {
 
             Section {
                 DisclosureGroup("Advanced Options", isExpanded: $isShowingOptions) {
-                    OptionsView(options: $model.options, commandPreview: model.commandPreview)
+                    OptionsView(options: $model.options)
                 }
             }
             .disabled(model.isFlashing)
