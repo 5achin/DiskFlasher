@@ -85,7 +85,6 @@ struct ContentView: View {
                         Label("Flash", systemImage: "bolt.fill")
                     }
                     .labelStyle(.titleAndIcon)
-                    .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canFlash)
                     .help("Write the disk image to the selected USB drive")
