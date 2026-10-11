@@ -14,7 +14,7 @@ enum DeviceAuthorizer {
     static var toolPath = "/usr/libexec/authopen"
 
     /// Blocks until the user answers the prompt, so call it off the main thread.
-    static func open(_ path: String) throws -> Int32 {
+    static func open(_ path: String, flags: Int32 = O_RDWR) throws -> Int32 {
         var sockets: [Int32] = [0, 0]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets) == 0 else {
             throw Failure.failed("The drive could not be opened.")
@@ -23,7 +23,7 @@ enum DeviceAuthorizer {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: toolPath)
-        process.arguments = ["-stdoutpipe", "-o", String(O_RDWR), path]
+        process.arguments = ["-stdoutpipe", "-o", String(flags), path]
         process.standardOutput = FileHandle(fileDescriptor: sockets[1], closeOnDealloc: false)
         let errors = Pipe()
         process.standardError = errors

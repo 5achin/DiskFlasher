@@ -94,7 +94,7 @@ final class FlashModel: ObservableObject {
         let devicePath = options.outputPath(for: disk)
         let device: Int32
         do {
-            device = try await Task.detached { try DeviceAuthorizer.open(devicePath) }.value
+            device = try await Task.detached { try DeviceAuthorizer.open(devicePath, flags: options.openFlags) }.value
         } catch DeviceAuthorizer.Failure.cancelled {
             status = .idle
             return
@@ -111,10 +111,11 @@ final class FlashModel: ObservableObject {
             return
         }
 
-        // dd's standard output is the opened drive, and /dev/fd/1 makes dd treat it as its output file.
+        // dd writes to its standard output, which is the opened drive. Naming the drive with
+        // of= would make dd open it again, and only the administrator prompt can do that.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/dd")
-        process.arguments = options.operands(input: isoURL.path, output: "/dev/fd/1")
+        process.arguments = options.operands(input: isoURL.path)
         process.standardOutput = FileHandle(fileDescriptor: device, closeOnDealloc: true)
         let errors = Pipe()
         process.standardError = errors

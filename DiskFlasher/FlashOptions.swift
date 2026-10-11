@@ -52,18 +52,22 @@ struct FlashOptions: Equatable {
         useRawDevice ? disk.rawDevicePath : disk.devicePath
     }
 
-    /// The dd operands in the order they are passed.
-    func operands(input: String, output: String) -> [String] {
-        var operands = ["if=\(input)", "of=\(output)", "bs=\(blockSize.rawValue)"]
+    /// The flags the drive is opened with. Synchronous writes are requested here because dd
+    /// can't switch them on for a drive that is already open.
+    var openFlags: Int32 {
+        synchronousWrites ? O_RDWR | O_SYNC : O_RDWR
+    }
+
+    /// The dd operands in the order they are passed. There is no `of=`: dd writes to its
+    /// standard output, which the app sets to the already opened drive.
+    func operands(input: String) -> [String] {
+        var operands = ["if=\(input)", "bs=\(blockSize.rawValue)"]
         if let count = positive(count) { operands.append("count=\(count)") }
         if let skip = positive(skip) { operands.append("skip=\(skip)") }
         if let seek = positive(seek) { operands.append("seek=\(seek)") }
         if let speedLimit = positive(speedLimit) { operands.append("speed=\(Int64(speedLimit) << 20)") }
 
-        var oflag: [String] = []
-        if synchronousWrites { oflag.append("sync") }
-        if bypassCache { oflag.append("direct") }
-        if !oflag.isEmpty { operands.append("oflag=\(oflag.joined(separator: ","))") }
+        if bypassCache { operands.append("oflag=direct") }
 
         var conv: [String] = []
         if padBlocks { conv.append("sync") }
