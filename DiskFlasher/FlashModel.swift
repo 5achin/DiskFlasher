@@ -51,6 +51,19 @@ final class FlashModel: ObservableObject {
             status = .failed("The ISO file could not be read.")
             return
         }
+        // Read a byte now so any macOS prompt for access to the folder appears before the password prompt.
+        guard let probe = try? FileHandle(forReadingFrom: isoURL),
+              let firstByte = try? probe.read(upToCount: 1), !firstByte.isEmpty else {
+            status = .failed("Disk Flasher can’t read \(isoURL.lastPathComponent). Allow access if macOS asks, or check Privacy & Security > Files & Folders in System Settings.")
+            return
+        }
+        try? probe.close()
+
+        guard let streamer = ImageStreamer() else {
+            status = .failed("Flashing could not be set up.")
+            return
+        }
+
         let options = options
         let total = options.bytesToCopy(inputSize: size)
         guard total > 0 else {
@@ -100,7 +113,15 @@ final class FlashModel: ObservableObject {
         // Same steps as flash_iso.sh: unmount, dd to the raw device, eject.
         // dd runs in the background so the script can stop it when the cancel file appears.
         let cancelPath = Shell.quote(cancelURL.path)
-        let dd = options.operands(input: isoURL.path, output: options.outputPath(for: disk))
+        let streaming = Task.detached(priority: .userInitiated) {
+            streamer.stream(
+                imageAt: isoURL,
+                paddingTo: options.padBlocks ? options.blockSize.bytes : nil,
+                skippingReadErrors: options.continueOnReadErrors
+            )
+        }
+
+        let dd = options.operands(input: streamer.pipeURL.path, output: options.outputPath(for: disk))
             .map(Shell.quote)
             .joined(separator: " ")
         var steps = [
@@ -115,9 +136,13 @@ final class FlashModel: ObservableObject {
         let command = steps.joined(separator: "; ")
         let result = await Shell.run("/usr/bin/osascript", ["-e", Self.appleScript(runningAsAdmin: command)])
         monitor.cancel()
+        streamer.stop()
+        let streamError = await streaming.value
 
         if isCancelling && result.status != 0 {
             status = .cancelled("Flashing was cancelled. \(disk.name) is partially written and unusable until you flash it again or erase it in Disk Utility.")
+        } else if let streamError {
+            status = .failed(streamError)
         } else if result.status == 0 {
             bytesWritten = total
             status = .succeeded(options.ejectWhenDone

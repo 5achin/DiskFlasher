@@ -53,8 +53,12 @@ struct FlashOptions: Equatable {
     }
 
     /// The dd operands, unquoted, in the order they are passed.
+    ///
+    /// `input` is the pipe an `ImageStreamer` writes to, so `fullblock` is needed to gather
+    /// whole blocks from it. Padding and read-error handling happen in the streamer, because
+    /// dd can't combine `conv=sync` with `fullblock` and never sees the image file itself.
     func operands(input: String, output: String) -> [String] {
-        var operands = ["if=\(input)", "of=\(output)", "bs=\(blockSize.rawValue)"]
+        var operands = ["if=\(input)", "iflag=fullblock", "of=\(output)", "bs=\(blockSize.rawValue)"]
         if let count = positive(count) { operands.append("count=\(count)") }
         if let skip = positive(skip) { operands.append("skip=\(skip)") }
         if let seek = positive(seek) { operands.append("seek=\(seek)") }
@@ -66,8 +70,6 @@ struct FlashOptions: Equatable {
         if !oflag.isEmpty { operands.append("oflag=\(oflag.joined(separator: ","))") }
 
         var conv: [String] = []
-        if padBlocks { conv.append("sync") }
-        if continueOnReadErrors { conv.append("noerror") }
         if flushBeforeFinishing { conv.append("fsync") }
         if !conv.isEmpty { operands.append("conv=\(conv.joined(separator: ","))") }
 
@@ -75,9 +77,13 @@ struct FlashOptions: Equatable {
         return operands
     }
 
-    /// How many bytes dd will read from an input of the given size, after skip and count.
+    /// How many bytes dd will write from an image of the given size, after padding, skip and count.
     func bytesToCopy(inputSize: Int64) -> Int64 {
-        var bytes = max(inputSize - Int64(positive(skip) ?? 0) * blockSize.bytes, 0)
+        var streamed = inputSize
+        if padBlocks, streamed % blockSize.bytes > 0 {
+            streamed += blockSize.bytes - streamed % blockSize.bytes
+        }
+        var bytes = max(streamed - Int64(positive(skip) ?? 0) * blockSize.bytes, 0)
         if let count = positive(count) {
             bytes = min(bytes, Int64(count) * blockSize.bytes)
         }
