@@ -256,7 +256,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Disk Flasher";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Disk Flasher reads the disk image you choose so it can write it to your USB drive.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Disk Flasher reads the disk image you choose so it can write it to your USB drive.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Disk Flasher reads the disk image you choose so it can write it to your USB drive.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Disk Flasher writes the disk image to the USB drive you select.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -282,7 +286,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Disk Flasher";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Disk Flasher reads the disk image you choose so it can write it to your USB drive.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Disk Flasher reads the disk image you choose so it can write it to your USB drive.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Disk Flasher reads the disk image you choose so it can write it to your USB drive.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Disk Flasher writes the disk image to the USB drive you select.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
