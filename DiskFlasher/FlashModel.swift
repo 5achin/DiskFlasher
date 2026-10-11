@@ -6,6 +6,7 @@ final class FlashModel: ObservableObject {
         case idle
         case flashing
         case succeeded(String)
+        case cancelled(String)
         case failed(String)
     }
 
@@ -15,6 +16,10 @@ final class FlashModel: ObservableObject {
     @Published var status: Status = .idle
     @Published var bytesWritten: Int64 = 0
     @Published var isoSize: Int64 = 0
+
+    /// Set while a flash is running; creating this file tells the privileged script to stop dd.
+    private var cancelFileURL: URL?
+    @Published private(set) var isCancelling = false
 
     var selectedDisk: Disk? {
         disks.first { $0.id == selectedDiskID }
@@ -63,6 +68,15 @@ final class FlashModel: ObservableObject {
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: logURL) }
 
+        let cancelURL = logURL.deletingPathExtension().appendingPathExtension("cancel")
+        cancelFileURL = cancelURL
+        isCancelling = false
+        defer {
+            try? FileManager.default.removeItem(at: cancelURL)
+            cancelFileURL = nil
+            isCancelling = false
+        }
+
         isoSize = size
         bytesWritten = 0
         status = .flashing
@@ -77,15 +91,21 @@ final class FlashModel: ObservableObject {
         }
 
         // Same steps as flash_iso.sh: unmount, dd to the raw device, eject.
+        // dd runs in the background so the script can stop it when the cancel file appears.
+        let cancelPath = Shell.quote(cancelURL.path)
         let command = [
-            "/usr/sbin/diskutil unmountDisk \(disk.devicePath)",
-            "/bin/dd if=\(Shell.quote(isoURL.path)) of=\(disk.rawDevicePath) bs=4m status=progress 2>\(Shell.quote(logURL.path))",
+            "/usr/sbin/diskutil unmountDisk \(disk.devicePath) || exit 1",
+            "/bin/dd if=\(Shell.quote(isoURL.path)) of=\(disk.rawDevicePath) bs=4m status=progress 2>\(Shell.quote(logURL.path)) & pid=$!",
+            "while kill -0 $pid 2>/dev/null; do if [ -e \(cancelPath) ]; then kill $pid; wait $pid; exit 99; fi; sleep 0.5; done",
+            "wait $pid || exit 1",
             "/usr/sbin/diskutil eject \(disk.devicePath)",
-        ].joined(separator: " && ")
+        ].joined(separator: "; ")
         let result = await Shell.run("/usr/bin/osascript", ["-e", Self.appleScript(runningAsAdmin: command)])
         monitor.cancel()
 
-        if result.status == 0 {
+        if isCancelling && result.status != 0 {
+            status = .cancelled("Flashing was cancelled. \(disk.name) is partially written and unusable until you flash it again or erase it in Disk Utility.")
+        } else if result.status == 0 {
             bytesWritten = size
             status = .succeeded("Your bootable USB is ready. \(disk.name) has been ejected.")
         } else if result.errorOutput.contains("-128") {
@@ -98,6 +118,13 @@ final class FlashModel: ObservableObject {
             status = .failed(ddError ?? (result.errorOutput.isEmpty ? "Flashing failed." : result.errorOutput))
         }
         await refreshDisks()
+    }
+
+    /// Stops a running flash. The drive is left partially written.
+    func cancel() {
+        guard isFlashing, let cancelFileURL else { return }
+        isCancelling = true
+        FileManager.default.createFile(atPath: cancelFileURL.path, contents: nil)
     }
 
     /// Wraps a shell command in AppleScript that asks macOS for an administrator password.

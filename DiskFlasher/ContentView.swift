@@ -5,6 +5,7 @@ struct ContentView: View {
     @StateObject private var model = FlashModel()
     @State private var isPickingISO = false
     @State private var isConfirming = false
+    @State private var isConfirmingCancel = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +52,11 @@ struct ContentView: View {
 
             HStack {
                 Spacer()
+                if model.isFlashing {
+                    Button("Cancel", role: .cancel) { isConfirmingCancel = true }
+                        .controlSize(.large)
+                        .disabled(model.isCancelling)
+                }
                 Button("Flash") { isConfirming = true }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -78,6 +84,15 @@ struct ContentView: View {
         } message: { disk in
             Text("You are about to completely erase \(disk.devicePath) (\(disk.name), \(disk.formattedSize)). All data on this drive will be permanently lost.")
         }
+        .confirmationDialog("Stop flashing?", isPresented: $isConfirmingCancel) {
+            Button("Stop Flashing", role: .destructive) { model.cancel() }
+            Button("Keep Flashing", role: .cancel) {}
+        } message: {
+            Text("The USB drive will be left partially written and will be unusable until you flash it again or erase it in Disk Utility.")
+        }
+        .onChange(of: model.isFlashing) {
+            if !model.isFlashing { isConfirmingCancel = false }
+        }
     }
 
     @ViewBuilder
@@ -88,7 +103,7 @@ struct ContentView: View {
         case .flashing:
             Section {
                 ProgressView(value: model.progress) {
-                    Text("Flashing… this may take a few minutes")
+                    Text(model.isCancelling ? "Cancelling…" : "Flashing… this may take a few minutes")
                 } currentValueLabel: {
                     Text("\(ByteCountFormatter.string(fromByteCount: model.bytesWritten, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: model.isoSize, countStyle: .file))")
                 }
@@ -97,6 +112,11 @@ struct ContentView: View {
             Section {
                 Label(message, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+            }
+        case .cancelled(let message):
+            Section {
+                Label(message, systemImage: "xmark.octagon.fill")
+                    .foregroundStyle(.orange)
             }
         case .failed(let message):
             Section {
