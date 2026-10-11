@@ -6,74 +6,116 @@ struct ContentView: View {
     @State private var isPickingISO = false
     @State private var isConfirming = false
     @State private var isConfirmingCancel = false
+    @State private var isDropTargeted = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                Section("ISO File") {
-                    HStack {
-                        Text(model.isoURL?.path ?? "No file selected")
-                            .foregroundStyle(model.isoURL == nil ? .secondary : .primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Button("Choose…") { isPickingISO = true }
+        Form {
+            Section {
+                LabeledContent {
+                    Button("Choose…") { isPickingISO = true }
+                } label: {
+                    Label {
+                        if let url = model.isoURL {
+                            Text(url.lastPathComponent)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text(isoDetail(for: url))
+                        } else {
+                            Text("Disk Image")
+                            Text("Choose an ISO file, or drag one here.")
+                        }
+                    } icon: {
+                        Image(systemName: "opticaldisc")
                     }
                 }
 
-                Section("USB Drive") {
-                    HStack {
-                        Picker("Disk", selection: $model.selectedDiskID) {
-                            if model.disks.isEmpty {
-                                Text("No external disks found").tag(Disk.ID?.none)
-                            }
-                            ForEach(model.disks) { disk in
-                                Text(disk.label).tag(Disk.ID?.some(disk.id))
-                            }
-                        }
-                        .labelsHidden()
-                        .disabled(model.disks.isEmpty)
-
-                        Button {
-                            Task { await model.refreshDisks() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .help("Refresh the list of disks")
+                Picker(selection: $model.selectedDiskID) {
+                    if model.disks.isEmpty {
+                        Text("None").tag(Disk.ID?.none)
+                    }
+                    ForEach(model.disks) { disk in
+                        Text("\(disk.name) (\(disk.formattedSize))").tag(Disk.ID?.some(disk.id))
+                    }
+                } label: {
+                    Label {
+                        Text("USB Drive")
+                        Text(diskDetail)
+                    } icon: {
+                        Image(systemName: "mediastick")
                     }
                 }
-
-                statusSection
+                .disabled(model.disks.isEmpty)
+            } footer: {
+                Text("Only external drives are listed. Flashing erases everything on the selected drive.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .formStyle(.grouped)
             .disabled(model.isFlashing)
 
-            Divider()
-
-            HStack {
-                Spacer()
+            statusSection
+        }
+        .formStyle(.grouped)
+        .scrollDisabled(true)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 500)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(.tint, lineWidth: 3)
+                    .padding(6)
+            }
+        }
+        .navigationTitle("Disk Flasher")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
                 if model.isFlashing {
-                    Button("Cancel", role: .cancel) { isConfirmingCancel = true }
-                        .controlSize(.large)
-                        .disabled(model.isCancelling)
-                }
-                Button("Flash") { isConfirming = true }
+                    Button(role: .cancel) {
+                        isConfirmingCancel = true
+                    } label: {
+                        Label("Cancel", systemImage: "stop.fill")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .disabled(model.isCancelling)
+                    .help("Stop flashing")
+                } else {
+                    Button {
+                        isConfirming = true
+                    } label: {
+                        Label("Flash", systemImage: "bolt.fill")
+                    }
+                    .labelStyle(.titleAndIcon)
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canFlash)
+                    .help("Write the disk image to the selected USB drive")
+                }
             }
-            .padding()
         }
-        .frame(minWidth: 520, minHeight: 360)
-        .task { await model.refreshDisks() }
+        .task {
+            // Keep the drive list current as drives are plugged in and removed.
+            while !Task.isCancelled {
+                if !model.isFlashing {
+                    await model.refreshDisks()
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .fileImporter(isPresented: $isPickingISO, allowedContentTypes: Self.imageTypes) { result in
             if case .success(let url) = result {
                 model.isoURL = url
             }
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !model.isFlashing,
+                  let url = urls.first(where: { Self.imageExtensions.contains($0.pathExtension.lowercased()) }) else {
+                return false
+            }
+            model.isoURL = url
+            return true
+        } isTargeted: { isDropTargeted = $0 && !model.isFlashing }
         .confirmationDialog(
-            "Erase \(model.selectedDisk?.name ?? "this disk")?",
+            "Erase “\(model.selectedDisk?.name ?? "this disk")” and flash it?",
             isPresented: $isConfirming,
             presenting: model.selectedDisk
         ) { _ in
@@ -82,7 +124,7 @@ struct ContentView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { disk in
-            Text("You are about to completely erase \(disk.devicePath) (\(disk.name), \(disk.formattedSize)). All data on this drive will be permanently lost.")
+            Text("All data on \(disk.name) (\(disk.formattedSize), \(disk.devicePath)) will be permanently lost. You can’t undo this action.")
         }
         .confirmationDialog("Stop flashing?", isPresented: $isConfirmingCancel) {
             Button("Stop Flashing", role: .destructive) { model.cancel() }
@@ -103,33 +145,54 @@ struct ContentView: View {
         case .flashing:
             Section {
                 ProgressView(value: model.progress) {
-                    Text(model.isCancelling ? "Cancelling…" : "Flashing… this may take a few minutes")
+                    Text(model.isCancelling ? "Cancelling…" : "Flashing…")
                 } currentValueLabel: {
-                    Text("\(ByteCountFormatter.string(fromByteCount: model.bytesWritten, countStyle: .file)) of \(ByteCountFormatter.string(fromByteCount: model.isoSize, countStyle: .file))")
+                    Text("\(Self.format(model.bytesWritten)) of \(Self.format(model.isoSize))")
+                        .monospacedDigit()
                 }
             }
         case .succeeded(let message):
-            Section {
-                Label(message, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            }
+            statusRow("Flash Complete", message, symbol: "checkmark.circle.fill", color: .green)
         case .cancelled(let message):
-            Section {
-                Label(message, systemImage: "xmark.octagon.fill")
-                    .foregroundStyle(.orange)
-            }
+            statusRow("Flash Cancelled", message, symbol: "xmark.octagon.fill", color: .orange)
         case .failed(let message):
-            Section {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+            statusRow("Flash Failed", message, symbol: "exclamationmark.triangle.fill", color: .red)
+        }
+    }
+
+    private func statusRow(_ title: String, _ message: String, symbol: String, color: Color) -> some View {
+        Section {
+            Label {
+                Text(title)
+                Text(message)
+            } icon: {
+                Image(systemName: symbol)
+                    .symbolRenderingMode(.multicolor)
+                    .foregroundStyle(color)
             }
         }
     }
 
-    private static let imageTypes: [UTType] = [
-        UTType(filenameExtension: "iso") ?? .diskImage,
-        UTType(filenameExtension: "img") ?? .diskImage,
-    ]
+    private var diskDetail: String {
+        if let disk = model.selectedDisk {
+            "\(disk.busProtocol), \(disk.devicePath)"
+        } else {
+            "Connect a USB drive to get started."
+        }
+    }
+
+    private func isoDetail(for url: URL) -> String {
+        let folder = url.deletingLastPathComponent().path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return folder }
+        return "\(Self.format(Int64(size))), in \(folder)"
+    }
+
+    private static func format(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private static let imageExtensions = ["iso", "img"]
+    private static let imageTypes: [UTType] = imageExtensions.map { UTType(filenameExtension: $0) ?? .diskImage }
 }
 
 #Preview {
