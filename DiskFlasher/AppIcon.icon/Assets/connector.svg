@@ -1,13 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F4F6F9"/>
-      <stop offset="1" stop-color="#C3C9D3"/>
-    </linearGradient>
-  </defs>
-  <g transform="translate(512 512) scale(1.2427) translate(-512 -512)">
-    <rect x="397" y="232" width="230" height="190" rx="24" fill="url(#metal)"/>
-    <rect x="439" y="282" width="46" height="46" rx="8" fill="#4A5568"/>
-    <rect x="539" y="282" width="46" height="46" rx="8" fill="#4A5568"/>
-  </g>
+  <path d="M642.8 591.9 L651.6 517.5 L568.9 769.7 L565.5 842.0 Z" fill="#98A2B1" stroke="#98A2B1" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M382.4 460.6 L651.6 517.5 L568.9 769.7 L226.9 671.1 Z" fill="#E6EAF0" stroke="#E6EAF0" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M368.4 545.0 L439.3 561.9 L402.0 626.8 L326.3 607.2 Z" fill="#5E6878" stroke="#5E6878" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M498.3 575.9 L575.0 594.1 L547.6 664.7 L465.2 643.2 Z" fill="#5E6878" stroke="#5E6878" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M254.1 745.7 L565.5 842.0 L568.9 769.7 L226.9 671.1 Z" fill="#C8CFD9" stroke="#C8CFD9" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M266.9 739.9 L545.8 825.3 L546.7 775.9 L249.4 689.2 Z" fill="#27303D" stroke="#27303D" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M281.5 744.4 L528.8 820.1 L528.6 798.6 L274.3 722.4 Z" fill="#F3F5F8" stroke="#F3F5F8" stroke-width="3" stroke-linejoin="round"/>
 </svg>
