@@ -18,13 +18,6 @@ final class FlashModel: ObservableObject {
     @Published var isoSize: Int64 = 0
     @Published var options = FlashOptions()
 
-    /// The operands of the dd command as it will be run, for display.
-    var commandOperands: [String] {
-        let input = isoURL?.path ?? "image.iso"
-        let output = selectedDisk.map(options.outputPath) ?? (options.useRawDevice ? "/dev/rdiskN" : "/dev/diskN")
-        return options.operands(input: input, output: output)
-    }
-
     /// Set while a flash is running; creating this file tells the privileged script to stop dd.
     private var cancelFileURL: URL?
     @Published private(set) var isCancelling = false

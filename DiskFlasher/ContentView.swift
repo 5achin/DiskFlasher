@@ -12,21 +12,6 @@ struct ContentView: View {
     var body: some View {
         Form {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Command", systemImage: "terminal")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text(Self.highlighted(operands: model.commandOperands))
-                        .font(.system(.title3, design: .monospaced).weight(.medium))
-                        .lineSpacing(3)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section {
                 LabeledContent {
                     Button("Choose…") { isPickingISO = true }
                 } label: {
@@ -193,28 +178,6 @@ struct ContentView: View {
                     .foregroundStyle(color)
             }
         }
-    }
-
-    /// The dd command with shell-style syntax colouring: command, operand names, paths and values.
-    private static func highlighted(operands: [String]) -> AttributedString {
-        func piece(_ text: String, _ color: Color) -> AttributedString {
-            var piece = AttributedString(text)
-            piece.foregroundColor = color
-            return piece
-        }
-        var command = piece("sudo ", .purple) + piece("dd", .purple)
-        for operand in operands {
-            let parts = operand.split(separator: "=", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else {
-                command += piece(" " + operand, .primary)
-                continue
-            }
-            let isPath = parts[0] == "if" || parts[0] == "of"
-            command += piece(" " + parts[0], .teal)
-            command += piece("=", .secondary)
-            command += piece(parts[1], isPath ? .orange : .primary)
-        }
-        return command
     }
 
     private var diskDetail: String {
